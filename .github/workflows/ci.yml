@@ -1,0 +1,116 @@
+name: CI
+
+# 提交/PR 跑测试；release.yml 在打包前用 workflow_call 复用同一套。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  frontend:
+    name: 前端（lint / 类型 / 单测 / 构建）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: ESLint
+        run: pnpm lint
+
+      - name: 脚本 .d.ts 类型检查
+        run: pnpm typecheck:scripts
+
+      # 编辑器给脚本/插件示例用的项目（crates/tsconfig.json）。
+      # 单独跑它，是因为 pnpm typecheck:scripts 的 include 是显式列举的，
+      # 而这里的 include 是**通配模式** —— 模式一旦写窄（例如漏掉
+      # `seed/<插件 id>/index.ts` 这一层），只有这个项目能发现，
+      # 表现为编辑器里插件入口报「找不到名称 $plugin」。
+      - name: 示例类型检查（编辑器项目）
+        run: pnpm typecheck:examples
+
+      - name: 编辑器单测（vitest）
+        run: pnpm test:editor
+
+      - name: 前端构建（vue-tsc + vite）
+        run: pnpm build
+
+  # ubuntu 不装 Linux 图形栈依赖（gtk / webkit2gtk / pipewire / wayland …）：
+  # 这里只测三个不依赖图形栈的 crate（引擎 / 脚本能力集 / 插件框架）。
+  # src-tauri（runlet）的编译 + lint + 测试交给 rust-app，
+  # 在它的两个目标平台（macOS / Windows）上全量跑。
+  rust-crates:
+    name: Rust crates（ubuntu）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: 格式检查（rustfmt，与平台无关，覆盖整个 workspace）
+        run: cargo fmt --all --check
+
+      - name: Clippy（-D warnings）
+        run: cargo clippy -p script-engine -p runlet-scripting --all-targets -- -D warnings
+
+      - name: 测试（脚本引擎 / 脚本能力集）
+        run: cargo test -p script-engine -p runlet-scripting --no-fail-fast
+
+  rust-app:
+    name: Rust 应用（${{ matrix.os }}）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # 两个平台都跑：macOS / Windows 专属的 cfg 分支只有在本平台才会被编译到
+      - name: Clippy（-D warnings）
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # --no-fail-fast：一个 target 挂了也把其余 target 跑完，一次拿到全部失败
+      - name: 测试（脚本引擎 / 能力集 / Tauri）
+        run: cargo test --workspace --no-fail-fast

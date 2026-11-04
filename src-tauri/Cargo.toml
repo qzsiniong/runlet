@@ -1,0 +1,93 @@
+[package]
+name = "runlet"
+version = "0.3.1"
+edition = "2021"
+description = "Runlet - script management and execution host"
+
+[lib]
+name = "runlet_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "runlet"
+path = "src/main.rs"
+
+[dependencies]
+# 脚本引擎：core 只提供运行时 / TS 转译 / 基础能力 / 扩展机制
+script-engine = { path = "../crates/script-engine" }
+# 使用方能力集：md5 / base32 / zstd / typeStr / confirm + 脚本目录 + CLI 宿主
+runlet-scripting = { path = "../crates/runlet-scripting" }
+tauri = { version = "2", features = [
+  "tray-icon",
+  "image-png",
+  "macos-private-api"
+] }
+tauri-plugin-notification = "2"
+tauri-plugin-global-shortcut = "2"
+# 深链接 runlet://（脚本窗口唤起 / 选中 / 确认后运行）
+tauri-plugin-deep-link = "2"
+# 脚本 $.confirm 的系统原生确认框(macOS/Windows/Linux 原生对话框)
+tauri-plugin-dialog = "2"
+enigo = "0.6"
+xcap = { version = "0.9", features = [ "image" ], default-features = false }
+rqrr = "0.11"
+image = { version = "0.25", default-features = false, features = [ "png" ] }
+serde = { version = "1", features = [ "derive" ] }
+serde_json = "1"
+dirs = "5"
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "sync",
+  "macros",
+  "time"
+] }
+log = "0.4"
+env_logger = "0.11"
+# `emit_progress` 的时间节流（GCRA 限流；与能力集 $.type_str 回调节流同款）
+# 只用 std 时钟与进程内状态，不需要 dashmap / quanta / jitter
+governor = { version = "0.10", default-features = false, features = ["std"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+mac-notification-sys = "0.6"
+core-graphics = "0.24"
+# 焦点探测（窗口级）：AX API 读焦点窗口，NSWorkspace 做应用级回退
+core-foundation = "0.10"
+# macOS 27+: 设置 NSMenuItem.preferredImageVisibility=.visible,避免菜单图标被默认隐藏
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = [
+  "std",
+  "NSMenu",
+  "NSMenuItem",
+  "NSStatusItem",
+  # 焦点探测：frontmostApplication / processIdentifier / bundleIdentifier / localizedName
+  "NSWorkspace",
+  "NSRunningApplication",
+  "libc",
+] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winrt-notification = "0.5"
+# 焦点探测（窗口级）：GetForegroundWindow 等
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"
+# 单实例：深链接在 Windows/Linux 是「新进程 + argv」，靠它转发给已运行的实例。
+# `deep-link` 特性让插件把 argv 里的 URL 重新投递成 URL 事件。
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+
+[dev-dependencies]
+image = { version = "0.25", features = [
+  "gif",
+  "png"
+] }
+
+[build-dependencies]
+png = "0.18"
+tauri-build = { version = "2", features = [] }
+
+# 注意：[profile.release] 必须放在 workspace 根（../Cargo.toml），
+# 放在成员包里会被 cargo 忽略并给出警告。

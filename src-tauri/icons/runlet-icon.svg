@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- 纯黑白：黑底 squircle + 白 `$` + 白播放三角，不用任何渐变 -->
+  <rect x="82" y="82" width="860" height="860" rx="192" ry="192" fill="#000000"/>
+  <!-- 发丝边：黑底在深色 Dock 上也能看出轮廓（灰度，非渐变） -->
+  <rect x="83.5" y="83.5" width="857" height="857" rx="190.5" ry="190.5"
+        fill="none" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="3"/>
+
+  <!-- `$`：S 形曲线 + 贯穿竖线，描边图形，任意尺寸都锐利 -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="104"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 648 372
+             C 648 300 578 264 512 264
+             C 434 264 368 306 368 372
+             C 368 440 438 462 512 484
+             C 592 508 656 532 656 606
+             C 656 680 584 736 504 736
+             C 428 736 360 700 360 628"/>
+    <path d="M 512 202 L 512 798"/>
+  </g>
+
+  <!-- 右下角「运行」小三角 -->
+  <path d="M 742 690 L 826 738 L 742 786 Z" fill="#FFFFFF"/>
+</svg>
