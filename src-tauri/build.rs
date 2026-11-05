@@ -42,11 +42,7 @@ fn render(scale: i32) -> Vec<u8> {
     };
 
     // 圆角矩形底:矩形内缩 MARGIN,四角按 RADIUS 倒角
-    let (lo, hi, r) = (
-        MARGIN * scale,
-        (BASE - MARGIN) * scale - 1,
-        RADIUS * scale,
-    );
+    let (lo, hi, r) = (MARGIN * scale, (BASE - MARGIN) * scale - 1, RADIUS * scale);
     for y in lo..=hi {
         for x in lo..=hi {
             let dx = if x < lo + r {
