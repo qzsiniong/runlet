@@ -1,11 +1,21 @@
 //! Tauri 2 构建脚本:
 //! 1. 调用 tauri_build::build() 处理 Tauri 资源/上下文。
-//! 2. 代码生成图标(深色圆角底 + 白色 K 光束 + 青色光点),免二进制资产入库:
-//!    - 32x32 / 128x128 / 1024x1024 PNG(供 Tauri 打包 + 托盘 + 窗口图标)
+//! 2. 代码生成图标(深色圆角底 + 白色 `>` 提示符 + 蓝色光标下划线),免二进制资产入库:
+//!    - 32x32 / 64x64 / 128x128 / 128x128@2x / 1024x1024 PNG
+//!      (供 Tauri 打包 + 托盘 + 窗口图标)
+//!    - icon.icns / icon.ico 是多尺寸容器格式,`png` crate 写不出来,
+//!      由 `pnpm tauri icon icons/icon.png` 一次性重生成后入库(不进本脚本)。
+//!
+//! 图形语义:「终端等你敲下一条命令」——`>` 是提示符,蓝色下划线是闪烁光标,
+//! 对应本项目「运行 / 管理 JS·TS 脚本」的核心动作。纯直线段,32px 下不糊。
 
 use std::path::PathBuf;
 
 const BASE: i32 = 64;
+/// macOS 图标网格:四周留约 9% 透明边距,与系统内其他 App 视觉齐平。
+const MARGIN: i32 = 6;
+/// 圆角半径(逻辑网格)。
+const RADIUS: i32 = 11;
 
 #[derive(Clone, Copy)]
 struct Rgba(u8, u8, u8, u8);
@@ -31,15 +41,29 @@ fn render(scale: i32) -> Vec<u8> {
         }
     };
 
-    // 圆角矩形底(逻辑半径 13)
-    let radius = 13 * scale;
-    for y in 0..h {
-        for x in 0..w {
-            let cx = (x - radius).max(0).min(w - 1 - radius);
-            let cy = (y - radius).max(0).min(h - 1 - radius);
-            let dx = x - cx;
-            let dy = y - cy;
-            if dx * dx + dy * dy <= radius * radius {
+    // 圆角矩形底:矩形内缩 MARGIN,四角按 RADIUS 倒角
+    let (lo, hi, r) = (
+        MARGIN * scale,
+        (BASE - MARGIN) * scale - 1,
+        RADIUS * scale,
+    );
+    for y in lo..=hi {
+        for x in lo..=hi {
+            let dx = if x < lo + r {
+                lo + r - x
+            } else if x > hi - r {
+                x - (hi - r)
+            } else {
+                0
+            };
+            let dy = if y < lo + r {
+                lo + r - y
+            } else if y > hi - r {
+                y - (hi - r)
+            } else {
+                0
+            };
+            if dx * dx + dy * dy <= r * r {
                 put(&mut buf, x, y, BG);
             }
         }
@@ -81,12 +105,11 @@ fn render(scale: i32) -> Vec<u8> {
         }
     };
 
-    // K:竖杠 + 两条对角线
-    line(&mut buf, 19, 15, 19, 49, 4, FG);
-    line(&mut buf, 23, 32, 44, 15, 4, FG);
-    line(&mut buf, 23, 32, 44, 49, 4, FG);
-    // 青色光点(光的方向)
-    line(&mut buf, 47, 15, 52, 12, 2, ACCENT);
+    // `>` 提示符(两段直线,圆头笔触自动接成尖角)
+    line(&mut buf, 21, 23, 29, 32, 2, FG);
+    line(&mut buf, 29, 32, 21, 41, 2, FG);
+    // 光标下划线:蓝色,图像里唯一的强调色
+    line(&mut buf, 34, 41, 43, 41, 2, ACCENT);
 
     buf
 }
@@ -104,6 +127,44 @@ fn encode_png(buf: &[u8], size: u32) -> Vec<u8> {
         writer.write_image_data(buf).unwrap();
     }
     png_bytes
+}
+
+/// 盒式下采样:把 size×size 的 RGBA 缓冲降到 (size/factor)²。
+/// 用于生成小于 BASE 逻辑网格的尺寸(如 32x32)。直接按 1x 渲染会让
+/// 线宽/圆角相对变大,所以先渲成 128 再逐块平均。
+/// 注意先预乘 alpha 再平均:否则透明区域的全黑 RGB 会混进来,边缘发暗。
+fn downsample(buf: &[u8], size: u32, factor: u32) -> (Vec<u8>, u32) {
+    let out = size / factor;
+    let n = factor * factor;
+    let mut dst = vec![0u8; (out * out * 4) as usize];
+
+    for oy in 0..out {
+        for ox in 0..out {
+            let (mut r, mut g, mut b, mut a) = (0u32, 0u32, 0u32, 0u32);
+            for sy in 0..factor {
+                for sx in 0..factor {
+                    let i = (((oy * factor + sy) * size + ox * factor + sx) * 4) as usize;
+                    let pa = buf[i + 3] as u32;
+                    r += buf[i] as u32 * pa / 255;
+                    g += buf[i + 1] as u32 * pa / 255;
+                    b += buf[i + 2] as u32 * pa / 255;
+                    a += pa;
+                }
+            }
+            let avg_a = a / n;
+            let j = ((oy * out + ox) * 4) as usize;
+            dst[j + 3] = avg_a as u8;
+            if avg_a > 0 {
+                // 反预乘回到直通 alpha
+                let un = |c: u32| ((c / n * 255 / avg_a).min(255)) as u8;
+                dst[j] = un(r);
+                dst[j + 1] = un(g);
+                dst[j + 2] = un(b);
+            }
+        }
+    }
+
+    (dst, out)
 }
 
 /// 内容与现有文件一致时跳过写入。
@@ -132,11 +193,20 @@ fn main() {
     let icons_dir = manifest_dir.join("icons");
     std::fs::create_dir_all(&icons_dir).unwrap();
 
-    write_png_if_changed(&icons_dir.join("32x32.png"), &render(1), BASE as u32);
+    // 32x32:由 128 网格下采样,保证文件名与像素尺寸一致(Linux hicolor 按名归档)
+    let (buf32, size32) = downsample(&render(2), (BASE * 2) as u32, 4);
+    write_png_if_changed(&icons_dir.join("32x32.png"), &buf32, size32);
+    // 64x64:BASE 网格 1x 整数倍,是 default_window_icon / 托盘的实际来源
+    write_png_if_changed(&icons_dir.join("64x64.png"), &render(1), BASE as u32);
     write_png_if_changed(
         &icons_dir.join("128x128.png"),
         &render(2),
         (BASE * 2) as u32,
+    );
+    write_png_if_changed(
+        &icons_dir.join("128x128@2x.png"),
+        &render(4),
+        (BASE * 4) as u32,
     );
     write_png_if_changed(&icons_dir.join("icon.png"), &render(16), (BASE * 16) as u32);
 }
