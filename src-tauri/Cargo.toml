@@ -45,7 +45,7 @@ log = "0.4"
 env_logger = "0.11"
 # `emit_progress` 的时间节流（GCRA 限流；与能力集 $.type_str 回调节流同款）
 # 只用 std 时钟与进程内状态，不需要 dashmap / quanta / jitter
-governor = { version = "0.10", default-features = false, features = ["std"] }
+governor = { version = "0.10", default-features = false, features = [ "std" ] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 mac-notification-sys = "0.6"
@@ -77,7 +77,7 @@ windows-sys = { version = "0.61", features = [
 tauri-plugin-autostart = "2"
 # 单实例：深链接在 Windows/Linux 是「新进程 + argv」，靠它转发给已运行的实例。
 # `deep-link` 特性让插件把 argv 里的 URL 重新投递成 URL 事件。
-tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-single-instance = { version = "2", features = [ "deep-link" ] }
 
 [dev-dependencies]
 image = { version = "0.25", features = [
